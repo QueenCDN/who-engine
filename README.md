@@ -20,7 +20,7 @@ In grok.com account settings, request an account data export; alternatively cons
 A: no historical archive, no described operators. B: selected archive. C: same archive + operator description. D: same archive + explicit G3 recipe. These are **external prompt interventions**, not modifications of the model's weights. For fair comparison, match model IDs and test stimuli. Importing a source archive into SQLite never sends it to xAI. Only fragments manually pasted into the experiment text area are sent after approval, up to 8000 characters. Each active run carries its own conversation history.
 
 ## Caveats
-- No live API calls were made while building this package. SDK requests follow the documented `Client`, `chat.create`, `chat.append`, `chat.sample` API, but availability of model IDs, authentication, billing and Windows dependency installation must be verified locally.
+- No live API calls were made while building this package. SDK requests follow the documented `Client`, `chat.create`, `chat.append` API and read the answer with `chat.stream()`, but availability of model IDs, authentication, billing and Windows dependency installation must be verified locally.
 - Do not use public file-sharing links for personal histories.
 - The xAI API processes content sent in approved experiment prompts; it is not a purely offline system.
 - Compare observations in journal before attributing a specific HOW operator.
@@ -51,7 +51,7 @@ who_engine/
                           DiagnosticsService
   ui/                     Page (протокол), PageRouter, пять разделов, SessionStore,
                           корень композиции
-tests/                    51 тест, запуск: python -m unittest discover -s tests -t .
+tests/                    58 тестов, запуск: python -m unittest discover -s tests -t .
 ```
 
 Принципы: один модуль — одна причина для изменения (SRP); новая группа,
@@ -126,3 +126,22 @@ Streamlit — на диск не пишется, в git не попадает и
 Тёмная тема задана в `.streamlit/config.toml` (`[theme] base = "dark"`).
 Чтобы вернуть светлую, замените `base` на `"light"` и удалите переопределения
 цветов ниже.
+
+
+## Почему ответ забирается потоком (v0.4)
+Унарный `chat.sample()` на рассуждающих моделях оказался нерабочим: модель
+обдумывает ответ десятки секунд, соединение всё это время простаивает, и
+промежуточное сетевое оборудование разрывает поток — gRPC возвращает
+`UNAVAILABLE: Stream removed (End of TCP stream)`. Проверено: `grok-4.6`
+стабильно падал через ~7 секунд, тогда как быстрая `grok-4.20-non-reasoning`
+отвечала за 0.7 с и проходила.
+
+Поэтому `complete()` читает ответ через `chat.stream()`: фрагменты идут
+непрерывно, простоя нет, медленные модели доходят до конца. Запрос при этом
+остаётся ровно один — автоповторов по-прежнему нет. В потоковом ответе не
+заполняется поле `model`, поэтому записывается запрошенный идентификатор.
+
+Там же исправлен разбор `usage`: объект protobuf не отдаёт поля через
+`vars()`, и в журнал вместо счётчиков токенов попадали служебные атрибуты
+модуля. Теперь поля перечисляются по дескриптору, и в журнале видны
+`prompt_tokens`, `completion_tokens`, `reasoning_tokens` и `cost_in_usd_ticks`.

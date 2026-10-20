@@ -26,18 +26,33 @@ class XaiProvider:
     # --- чат ----------------------------------------------------------------
 
     def complete(self, messages: Sequence[ChatMessage], model: str) -> ChatReply:
+        """Один запрос к модели, без скрытых автоповторов.
+
+        Ответ забирается потоком, а не унарным sample(). Рассуждающая модель
+        обдумывает ответ десятки секунд, и за это время промежуточное сетевое
+        оборудование разрывает простаивающий поток: gRPC возвращает
+        UNAVAILABLE «Stream removed (End of TCP stream)». Поток передаёт
+        фрагменты непрерывно и доживает до конца ответа. Запрос при этом
+        остаётся ровно один — повторов не добавляется.
+        """
         constructors = self._message_constructors()
         client = self._client()
+        final = None
+        parts: list[str] = []
         try:
             chat = client.chat.create(model=model)
             for message in messages:
                 chat.append(constructors[message.role](message.content))
-            # Без скрытых автоповторов: платный неоднозначный запрос требует
-            # явного решения оператора.
-            response = chat.sample()
+            for response, chunk in chat.stream():
+                final = response
+                parts.append(str(getattr(chunk, 'content', '') or ''))
+        except Exception as exc:
+            raise ProviderError(self._explain(exc)) from exc
         finally:
             self._close(client)
-        return self._to_reply(response, model)
+        if final is None:
+            raise ProviderError('Модель не вернула ни одного фрагмента ответа.')
+        return self._to_reply(final, model, fallback=''.join(parts))
 
     # --- бесплатные справочные вызовы ---------------------------------------
 
@@ -99,9 +114,12 @@ class XaiProvider:
         return {Role.SYSTEM: system, Role.USER: user, Role.ASSISTANT: assistant}
 
     @staticmethod
-    def _to_reply(response: Any, requested_model: str) -> ChatReply:
+    def _to_reply(response: Any, requested_model: str,
+                  fallback: str = '') -> ChatReply:
+        """В потоковом ответе поле model не заполняется — берём запрошенную."""
+        content = str(getattr(response, 'content', '') or '') or fallback
         return ChatReply(
-            content=str(getattr(response, 'content', '') or ''),
+            content=content,
             model=str(getattr(response, 'model', None) or requested_model),
             usage=normalize_usage(getattr(response, 'usage', None)),
             request_id=str(getattr(response, 'id', '') or ''),
@@ -126,7 +144,7 @@ class XaiProvider:
             ('UNAUTHENTICATED', 'Ключ не принят: проверьте, что он действующий и скопирован целиком.'),
             ('PERMISSION_DENIED', 'Ключу не хватает прав на этот вызов.'),
             ('NOT_FOUND', 'Запрошенный ресурс недоступен этому ключу.'),
-            ('UNAVAILABLE', 'Сервис недоступен или нет сети.'),
+            ('UNAVAILABLE', 'Соединение разорвано: сервис недоступен, нет сети либо поток прервали по пути.'),
             ('DEADLINE_EXCEEDED', 'Истекло время ожидания ответа.'),
         )
         for marker, hint in hints:

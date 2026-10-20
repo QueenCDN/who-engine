@@ -62,6 +62,23 @@ def _from_model_dump(usage: Any) -> dict[str, Any]:
     return usage.model_dump(mode='json')
 
 
+def _from_protobuf(usage: Any) -> dict[str, Any]:
+    """Протобуф не отдаёт поля через vars(): перечисляем их по дескриптору."""
+    result: dict[str, Any] = {}
+    for field in usage.DESCRIPTOR.fields:
+        value = getattr(usage, field.name, None)
+        if isinstance(value, SCALARS):
+            result[field.name] = value
+            continue
+        try:
+            items = [item for item in value if isinstance(item, SCALARS)]
+        except TypeError:
+            continue
+        if items:
+            result[field.name] = items
+    return result
+
+
 def _from_vars(usage: Any) -> dict[str, Any]:
     return {key: value for key, value in vars(usage).items()
             if isinstance(value, SCALARS)}
@@ -75,6 +92,9 @@ def _from_repr(usage: Any) -> dict[str, Any]:
 USAGE_HANDLERS: tuple[tuple[Callable[[Any], bool], Callable[[Any], dict]], ...] = (
     (lambda usage: usage is None, lambda usage: {}),
     (lambda usage: hasattr(usage, 'model_dump'), _from_model_dump),
+    # Проверять раньше __dict__: у протобуфа он есть, но содержит служебные
+    # атрибуты модуля, а не счётчики токенов.
+    (lambda usage: hasattr(usage, 'DESCRIPTOR'), _from_protobuf),
     (lambda usage: hasattr(usage, '__dict__'), _from_vars),
 )
 
