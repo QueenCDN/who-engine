@@ -195,3 +195,45 @@ class ImportResult:
     @property
     def duplicates(self) -> int:
         return self.recognized - self.added
+
+
+@dataclass(frozen=True)
+class ModelInfo:
+    """Языковая модель, как её описывает API провайдера."""
+
+    name: str
+    aliases: tuple[str, ...] = ()
+    version: str = ''
+    max_prompt_length: int = 0
+    prompt_price: int = 0
+    completion_price: int = 0
+
+    @property
+    def label(self) -> str:
+        suffix = f' (v{self.version})' if self.version else ''
+        return f'{self.name}{suffix}'
+
+
+@dataclass(frozen=True)
+class ApiKeyInfo:
+    """Сведения о ключе. Сам ключ не хранится — только скрытое представление."""
+
+    redacted: str
+    name: str = ''
+    blocked: bool = False
+    disabled: bool = False
+    acls: tuple[str, ...] = ()
+
+    @property
+    def usable(self) -> bool:
+        return not (self.blocked or self.disabled)
+
+
+@dataclass(frozen=True)
+class ProbeResult:
+    """Итог платного тестового запроса."""
+
+    model: str
+    answer: str
+    usage: dict[str, Any]
+    request_id: str

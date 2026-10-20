@@ -39,6 +39,7 @@ class ExperimentsPage:
         st.divider()
         self._composer(run)
         st.caption(RIGOUR_HINT)
+        self._danger_zone(run)
 
     def _creation_form(self) -> None:
         with st.form('new'):
@@ -88,3 +89,21 @@ class ExperimentsPage:
             st.error(UNCERTAIN_HINT + str(exc))
             return
         st.rerun()
+
+    def _danger_zone(self, run: Run) -> None:
+        """Удаление спрятано в свёрнутый блок и требует двух действий."""
+        turns, notes = self._service.run_size(run.id)
+        with st.expander('Удалить эксперимент'):
+            st.warning(
+                f'Будут безвозвратно удалены: эксперимент «{run.title}» '
+                f'({run.arm.label}), реплик — {turns}, наблюдений — {notes}. '
+                'Импортированный архив не затрагивается.')
+            st.caption('Перед удалением журнал можно выгрузить в разделе '
+                       '«Наблюдения и экспорт».')
+            confirmed = st.checkbox(
+                f'Подтверждаю удаление {run.short_id}', value=False,
+                key=f'confirm_delete_{run.id}')
+            if st.button('Удалить безвозвратно', disabled=not confirmed,
+                         key=f'delete_{run.id}'):
+                self._service.delete_run(run.id)
+                st.rerun()

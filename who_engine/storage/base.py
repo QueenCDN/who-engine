@@ -19,6 +19,12 @@ class RunRepository(Protocol):
     def list_runs(self) -> list[Run]:
         ...
 
+    def delete_run(self, run_id: str) -> None:
+        ...
+
+    def run_size(self, run_id: str) -> tuple[int, int]:
+        ...
+
 
 class TurnRepository(Protocol):
     def add_turn(self, run_id: str, role: Role, content: str,

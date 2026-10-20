@@ -12,4 +12,10 @@ maxUploadSize = 120
 headless = true
 
 [theme]
-base = "light"
+base = "dark"
+# Приглушённый сине-серый фон: длительное чтение протоколов экспериментов
+# без резкого контраста.
+backgroundColor = "#13161c"
+secondaryBackgroundColor = "#1c212b"
+textColor = "#dfe3ea"
+primaryColor = "#6ea8fe"

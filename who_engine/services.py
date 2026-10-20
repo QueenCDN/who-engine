@@ -4,11 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from .archive import ArchiveImporter, XaiMetadataParser
-from .domain import (Arm, ChatMessage, ConversationSummary, ImportResult, Note,
-                     Role, Run, SourceHit, SourceMessage, Turn, TurnStatus)
+from .domain import (ApiKeyInfo, Arm, ChatMessage, ConversationSummary,
+                     ImportResult, ModelInfo, Note, ProbeResult, Role, Run,
+                     SourceHit, SourceMessage, Turn, TurnStatus)
 from .errors import WhoEngineError
 from .prompts import PromptComposer
-from .providers import ChatClient
+from .providers import AccountInspector, ChatClient, ModelCatalog
 from .storage.base import (BackupRepository, ExportRepository, NoteRepository,
                            RunRepository, SourceRepository, TurnRepository)
 
@@ -42,6 +43,16 @@ class ExperimentService:
 
     def transcript(self, run_id: str) -> list[Turn]:
         return self._turns.list_turns(run_id)
+
+    def run_size(self, run_id: str) -> tuple[int, int]:
+        return self._runs.run_size(run_id)
+
+    def delete_run(self, run_id: str) -> None:
+        """Удаляет эксперимент вместе с его репликами и наблюдениями.
+
+        Операция необратима и не трогает импортированный архив.
+        """
+        self._runs.delete_run(run_id)
 
     def validate_archive(self, arm: Arm, passages: str) -> None:
         self._composer.check_archive_length(arm, passages)
@@ -146,3 +157,30 @@ class BackupService:
 
     def create(self) -> Path:
         return self._repository.backup()
+
+
+class DiagnosticsService:
+    """Проверка связи с xAI: бесплатные вызовы отделены от платного."""
+
+    PROBE_PROMPT = 'Ответь одним словом: связь'
+
+    def __init__(self, inspector: AccountInspector, catalog: ModelCatalog,
+                 chat: ChatClient) -> None:
+        self._inspector = inspector
+        self._catalog = catalog
+        self._chat = chat
+
+    def check_key(self) -> ApiKeyInfo:
+        """Бесплатно: подтверждает, что ключ принят и не заблокирован."""
+        return self._inspector.key_info()
+
+    def models(self) -> list[ModelInfo]:
+        """Бесплатно: перечень моделей, доступных этому ключу."""
+        return self._catalog.language_models()
+
+    def probe(self, model: str) -> ProbeResult:
+        """Платно: один минимальный запрос, подтверждающий доступ к модели."""
+        reply = self._chat.complete(
+            [ChatMessage(Role.USER, self.PROBE_PROMPT)], model)
+        return ProbeResult(model=reply.model, answer=reply.content,
+                           usage=reply.usage, request_id=reply.request_id)

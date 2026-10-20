@@ -83,6 +83,27 @@ class SqliteRepository:
         return [Run(row[0], row[1], row[2], Arm.from_label(row[3]), row[4])
                 for row in rows]
 
+    def run_size(self, run_id: str) -> tuple[int, int]:
+        """Сколько реплик и наблюдений исчезнет вместе с экспериментом."""
+        with self._connection() as connection:
+            turns = connection.execute(
+                'SELECT COUNT(*) FROM turns WHERE run_id=?', (run_id,)).fetchone()[0]
+            notes = connection.execute(
+                'SELECT COUNT(*) FROM notes WHERE run_id=?', (run_id,)).fetchone()[0]
+        return turns, notes
+
+    def delete_run(self, run_id: str) -> None:
+        """Удаляет эксперимент целиком.
+
+        Порядок обязателен: turns ссылается на runs внешним ключом.
+        Импортированный архив не затрагивается — он не принадлежит
+        эксперименту.
+        """
+        with self._connection() as connection:
+            connection.execute('DELETE FROM turns WHERE run_id=?', (run_id,))
+            connection.execute('DELETE FROM notes WHERE run_id=?', (run_id,))
+            connection.execute('DELETE FROM runs WHERE id=?', (run_id,))
+
     # --- turns --------------------------------------------------------------
 
     def add_turn(self, run_id: str, role: Role, content: str,
