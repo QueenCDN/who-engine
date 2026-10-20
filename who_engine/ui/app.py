@@ -17,18 +17,13 @@ from .backup import BackupPage
 from .base import PageRouter
 from .diagnostics import DiagnosticsPage
 from .experiments import ExperimentsPage
+from .navigation import SidebarNavigation
 from .observations import ObservationsPage
-from .session import FROM_UI, SessionStore
+from .session import SessionStore
 
 TITLE = 'WHO-ENGINE v0.2'
 DISCLAIMER = ('Локальный исследовательский инструмент. Не доказывает и не '
               'переносит WHO исходной модели.')
-KEY_HELP = ('Хранится только в памяти этой сессии: на диск не пишется и в '
-            'репозиторий не попадает. Пусто — берётся ключ из .env или секретов.')
-MODEL_HELP = ('Модель должна быть одинаковой в сравниваемых группах. Полный '
-              'список загружается в разделе «Проверка API».')
-COST_WARNING = 'API-запросы могут быть платными. Автоповторов нет.'
-OTHER_MODEL = 'Другая модель…'
 
 
 @dataclass
@@ -43,47 +38,20 @@ class App:
         st.set_page_config(page_title=TITLE, page_icon='🧭', layout='wide')
         self.repository.init()
         store = SessionStore(st.session_state, self.settings)
+        # Ключ и модель читаются из состояния сессии, а не из виджетов боковой
+        # панели: настройки живут в разделе «Проверка API», который
+        # отрисовывается уже после того, как провайдер собран.
+        credentials = store.credentials()
+        provider = build_provider(credentials.api_key,
+                                  timeout=self.settings.request_timeout)
         st.title(TITLE)
         st.caption(DISCLAIMER)
+        router = self._router(provider, store, store.model(),
+                              credentials.present)
         with st.sidebar:
-            credentials = self._key_panel(store)
-            provider = build_provider(credentials.api_key,
-                                      timeout=self.settings.request_timeout)
-            model = self._model_panel(store)
-            st.warning(COST_WARNING)
-            router = self._router(provider, store, model, credentials.present)
-            selected = st.radio('Раздел', router.labels)
+            st.header('Разделы')
+            selected = SidebarNavigation(router, st.session_state).render()
         router.render(selected)
-
-    # --- боковая панель -----------------------------------------------------
-
-    def _key_panel(self, store: SessionStore):
-        st.header('Настройки')
-        entered = st.text_input('API ключ xAI', value='', type='password',
-                                help=KEY_HELP,
-                                placeholder='xai-…')
-        if entered:
-            store.set_api_key(entered)
-        credentials = store.credentials()
-        st.caption(f'Ключ: {credentials.source}')
-        if credentials.source == FROM_UI and st.button('Сбросить введённый ключ'):
-            store.clear_api_key()
-            st.rerun()
-        return credentials
-
-    def _model_panel(self, store: SessionStore) -> str:
-        options = store.model_options()
-        current = store.model()
-        choices = [*options, OTHER_MODEL]
-        index = options.index(current) if current in options else 0
-        chosen = st.selectbox('Модель xAI', choices, index=index,
-                              help=MODEL_HELP)
-        if chosen == OTHER_MODEL:
-            chosen = st.text_input('ID модели вручную', value=current)
-        store.set_model(chosen)
-        return store.model()
-
-    # --- сборка разделов ----------------------------------------------------
 
     def _router(self, provider: Provider, store: SessionStore, model: str,
                 key_present: bool) -> PageRouter:

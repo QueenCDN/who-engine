@@ -39,9 +39,13 @@ class SessionStore:
 
     # --- ключ ---------------------------------------------------------------
 
+    def override(self) -> str:
+        """Ключ, введённый в интерфейсе, без обращения к .env."""
+        return str(self._state.get(KEY_FIELD, '') or '').strip()
+
     def credentials(self) -> Credentials:
         """Приоритет: введённый в интерфейсе ключ, затем .env/секреты."""
-        override = str(self._state.get(KEY_FIELD, '') or '').strip()
+        override = self.override()
         if override:
             return Credentials(override, FROM_UI)
         if self._settings.has_api_key:

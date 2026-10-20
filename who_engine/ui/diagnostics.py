@@ -1,21 +1,31 @@
-"""Раздел «Проверка API»: связь, ключ, доступные модели."""
+"""Раздел «Проверка API»: ключ, модель, связь.
+
+Здесь же живут настройки подключения — они нужны только в этом месте и не
+загромождают навигацию.
+"""
 from __future__ import annotations
 
 import streamlit as st
 
 from ..domain import ModelInfo
 from ..services import DiagnosticsService
-from .session import SessionStore
+from .session import FROM_UI, SessionStore
 
 INTRO = ('Проверка ключа и перечень моделей выполняются бесплатно: токены не '
          'расходуются. Тестовый запрос внизу — платный, как и любой другой '
          'запрос к модели.')
-NO_KEY_HINT = ('Ключ не задан. Укажите его в боковой панели или в .env, '
-               'затем вернитесь сюда.')
+KEY_HELP = ('Хранится только в памяти этой сессии: на диск не пишется и в '
+            'репозиторий не попадает. Пусто — берётся ключ из .env или секретов.')
+MODEL_HELP = ('Модель должна быть одинаковой в сравниваемых группах. Выбранная '
+              'здесь модель используется для новых экспериментов.')
+COST_WARNING = 'API-запросы могут быть платными. Автоповторов нет.'
+NO_KEY_HINT = 'Без ключа доступна только настройка: запросы к xAI невозможны.'
+OTHER_MODEL = 'Другая модель…'
 
 
 class DiagnosticsPage:
     label = 'Проверка API'
+    icon = ':material/network_check:'
 
     def __init__(self, service: DiagnosticsService, store: SessionStore,
                  key_present: bool) -> None:
@@ -24,22 +34,37 @@ class DiagnosticsPage:
         self._key_present = key_present
 
     def render(self) -> None:
-        st.subheader('Проверка связи с xAI')
+        st.subheader('Подключение к xAI')
         st.caption(INTRO)
-        if not self._key_present:
-            st.warning(NO_KEY_HINT)
-            return
-        self._key_section()
+        st.warning(COST_WARNING)
+        self._key_settings()
         st.divider()
-        self._models_section()
+        self._model_settings()
         st.divider()
         self._probe_section()
 
-    # --- бесплатные проверки ------------------------------------------------
+    # --- настройки подключения ----------------------------------------------
 
-    def _key_section(self) -> None:
-        st.markdown('**1. Ключ** — бесплатно')
-        if not st.button('Проверить ключ'):
+    def _key_settings(self) -> None:
+        st.markdown('**Ключ xAI**')
+        entered = st.text_input('API ключ', value=self._store.override(),
+                                type='password', help=KEY_HELP,
+                                placeholder='xai-…')
+        if entered.strip() != self._store.override():
+            self._store.set_api_key(entered)
+            st.rerun()
+        credentials = self._store.credentials()
+        st.caption(f'Источник ключа: {credentials.source}')
+        if credentials.source == FROM_UI and st.button('Сбросить введённый ключ'):
+            self._store.clear_api_key()
+            st.rerun()
+        if not self._key_present:
+            st.info(NO_KEY_HINT)
+            return
+        self._key_check()
+
+    def _key_check(self) -> None:
+        if not st.button('Проверить ключ', type='primary'):
             return
         try:
             with st.spinner('Запрашиваем сведения о ключе…'):
@@ -59,9 +84,23 @@ class DiagnosticsPage:
             'права': ', '.join(info.acls) or '—',
         })
 
-    def _models_section(self) -> None:
-        st.markdown('**2. Доступные модели** — бесплатно')
-        st.caption('Список подставляется в выбор модели в боковой панели.')
+    def _model_settings(self) -> None:
+        st.markdown('**Модель**')
+        options = self._store.model_options()
+        current = self._store.model()
+        choices = [*options, OTHER_MODEL]
+        index = options.index(current) if current in options else 0
+        chosen = st.selectbox('Модель xAI', choices, index=index, help=MODEL_HELP)
+        if chosen == OTHER_MODEL:
+            chosen = st.text_input('ID модели вручную', value=current)
+        if chosen.strip() and chosen.strip() != current:
+            self._store.set_model(chosen)
+            st.rerun()
+        if self._key_present:
+            self._model_catalog()
+
+    def _model_catalog(self) -> None:
+        st.caption('Полный перечень можно загрузить из xAI — это бесплатно.')
         if st.button('Загрузить список моделей'):
             try:
                 with st.spinner('Запрашиваем список моделей…'):
@@ -70,17 +109,12 @@ class DiagnosticsPage:
                 st.error(f'Не удалось получить список: {exc}')
                 return
             self._store.set_catalog(models)
-            # Боковая панель отрисовывается раньше тела страницы, поэтому
-            # без перезапуска новый список попал бы в выбор модели только
-            # со следующего действия пользователя.
             st.rerun()
         catalog = self._store.catalog()
         if catalog:
-            st.success(f'Доступно моделей: {len(catalog)}. '
-                       'Список подставлен в боковую панель.')
-            st.dataframe(
-                [self._model_row(model) for model in catalog],
-                use_container_width=True, hide_index=True)
+            st.success(f'Доступно моделей: {len(catalog)}.')
+            st.dataframe([self._model_row(model) for model in catalog],
+                         width='stretch', hide_index=True)
 
     @staticmethod
     def _model_row(model: ModelInfo) -> dict:
@@ -95,9 +129,12 @@ class DiagnosticsPage:
 
     def _probe_section(self) -> None:
         model = self._store.model()
-        st.markdown('**3. Тестовый запрос** — платный')
+        st.markdown('**Тестовый запрос — платный**')
         st.caption(f'Отправляет одно сообщение «{self._service.PROBE_PROMPT}» '
                    f'модели {model}. Подтверждает, что доступ к самой модели есть.')
+        if not self._key_present:
+            st.info(NO_KEY_HINT)
+            return
         confirmed = st.checkbox(
             'Подтверждаю один платный тестовый запрос', value=False)
         if not st.button('Отправить тестовый запрос', disabled=not confirmed):

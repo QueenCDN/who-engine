@@ -20,6 +20,7 @@ UNCERTAIN_HINT = ('Статус uncertain: запрос мог дойти до �
 
 class ExperimentsPage:
     label = 'Эксперименты'
+    icon = ':material/science:'
 
     def __init__(self, service: ExperimentService, model: str,
                  api_key_present: bool) -> None:
@@ -45,6 +46,8 @@ class ExperimentsPage:
         with st.form('new'):
             title = st.text_input('Название эксперимента', 'Проверка G3')
             arm_label = st.selectbox('Группа', Arm.labels())
+            st.caption(f'Модель нового эксперимента: {self._model}. '
+                       'Изменить — в разделе «Проверка API».')
             if st.form_submit_button('Создать эксперимент'):
                 self._service.create_run(
                     title, Arm.from_label(arm_label), self._model)
@@ -73,6 +76,13 @@ class ExperimentsPage:
         confirmed = st.checkbox(
             'Подтверждаю платную отправку видимого текста в xAI API', value=False)
         ready = bool(prompt.strip()) and confirmed and self._api_key_present
+        # Запрос уходит модели, записанной при создании эксперимента, а не
+        # выбранной сейчас: иначе сравнение групп потеряло бы смысл.
+        st.caption(f'Запрос уйдёт модели {run.model} — она закреплена за этим '
+                   f'экспериментом.')
+        if not self._api_key_present:
+            st.info('Ключ не задан: отправка недоступна. '
+                    'Укажите ключ в разделе «Проверка API».')
         if st.button('Отправить запрос', disabled=not ready):
             self._send(run, prompt, passages)
 

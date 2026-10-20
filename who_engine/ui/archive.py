@@ -14,6 +14,7 @@ FOOTER = ('Для неизвестного варианта JSON нужен ан
 
 class ArchivePage:
     label = 'Архив локально'
+    icon = ':material/library_books:'
 
     def __init__(self, service: ArchiveService) -> None:
         self._service = service

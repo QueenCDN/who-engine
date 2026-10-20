@@ -9,6 +9,7 @@ from ..services import ExperimentService, ObservationService
 
 class ObservationsPage:
     label = 'Наблюдения и экспорт'
+    icon = ':material/edit_note:'
 
     def __init__(self, experiments: ExperimentService,
                  observations: ObservationService) -> None:

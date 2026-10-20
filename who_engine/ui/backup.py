@@ -12,6 +12,7 @@ STATE_KEY = 'backup_path'
 
 class BackupPage:
     label = 'Резервное копирование'
+    icon = ':material/backup:'
 
     def __init__(self, service: BackupService) -> None:
         self._service = service

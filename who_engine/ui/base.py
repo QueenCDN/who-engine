@@ -6,9 +6,14 @@ from typing import Mapping, Protocol, Sequence, runtime_checkable
 
 @runtime_checkable
 class Page(Protocol):
-    """Один раздел бокового меню."""
+    """Один раздел бокового меню.
+
+    Иконка объявляется здесь же, рядом с меткой: навигация не должна знать,
+    какому разделу какой значок соответствует.
+    """
 
     label: str
+    icon: str
 
     def render(self) -> None:
         ...
@@ -32,6 +37,11 @@ class PageRouter:
     @property
     def default(self) -> str:
         return self.labels[0]
+
+    def icon(self, label: str) -> str | None:
+        """Значок раздела; None, если раздел его не объявил."""
+        page = self._pages.get(label)
+        return getattr(page, 'icon', '') or None
 
     def render(self, label: str) -> None:
         self._pages[label if label in self._pages else self.default].render()
