@@ -1,18 +1,15 @@
 """Слой интерфейса Streamlit. Логика находится в сервисах, не здесь.
 
-Корень композиции импортируется лениво: модули без зависимости от Streamlit
-(например, session) должны оставаться импортируемыми без него.
+Пакет намеренно ничего не импортирует. Так `who_engine.ui.base` и
+`who_engine.ui.session` остаются импортируемыми без Streamlit, а корень
+композиции (`who_engine.ui.app`) подтягивается обычным импортом из точки
+входа — один раз при старте процесса.
+
+Раньше здесь был ленивый `__getattr__`, который импортировал `app` при
+обращении к атрибуту. Это уводило импорт всего дерева зависимостей
+(streamlit, grpc, xai_sdk, pyarrow) из запуска процесса в выполнение скрипта
+сессии. Streamlit выполняет скрипт в отдельном потоке на каждую сессию, и при
+одновременном первом импорте из двух сессий — особенно когда Streamlit Cloud
+в этот момент подменяет файлы при обновлении — импорт рушился с
+`KeyError: 'who_engine.storage.base'`.
 """
-from __future__ import annotations
-
-from typing import Any
-
-__all__ = ['build_app', 'main']
-
-
-def __getattr__(name: str) -> Any:
-    if name in __all__:
-        from . import app
-
-        return getattr(app, name)
-    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
