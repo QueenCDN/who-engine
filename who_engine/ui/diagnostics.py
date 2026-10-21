@@ -55,13 +55,50 @@ class DiagnosticsPage:
             st.rerun()
         credentials = self._store.credentials()
         st.caption(f'Источник ключа: {credentials.source}')
+        self._note_section_placement()
         if credentials.source == FROM_UI and st.button('Сбросить введённый ключ'):
             self._store.clear_api_key()
             st.rerun()
         if not self._key_present:
             st.info(NO_KEY_HINT)
+            self._explain_missing_key()
             return
         self._key_check()
+
+    @staticmethod
+    def _note_section_placement() -> None:
+        """Ключ читается и из секции, но на верхнем уровне он надёжнее."""
+        from ..config import secret_section_holding
+
+        section = secret_section_holding('XAI_API_KEY')
+        if section:
+            st.caption(f'Ключ найден внутри секции `[{section}]`. Он работает, '
+                       'но на верхнем уровне Streamlit отдаёт его и в '
+                       'переменные окружения — надёжнее перенести туда.')
+
+    @staticmethod
+    def _explain_missing_key() -> None:
+        """Показывает ТОЛЬКО имена секретов — значения не читаются."""
+        from ..config import env_var_present, secret_is_section, secret_names
+
+        with st.expander('Почему ключ не виден?'):
+            names = secret_names()
+            if not names:
+                st.write('Секреты приложения не заданы или не прочитаны. '
+                         'Проверьте Settings → Secrets и перезапустите '
+                         'приложение (⋮ → Reboot).')
+            else:
+                st.write('Видимые имена секретов (значения не показываются):')
+                for name in names:
+                    mark = ' — это секция, а не значение' if secret_is_section(name) else ''
+                    st.write(f'• `{name}`{mark}')
+            st.write(f'Переменная окружения `XAI_API_KEY`: '
+                     f'{"задана" if env_var_present("XAI_API_KEY") else "нет"}')
+            st.caption(
+                'Ожидаются имена верхнего уровня `XAI_API_KEY` и `XAI_MODEL`. '
+                'Если они оказались внутри секции — например, под `[general]` — '
+                'Streamlit их не отдаёт по этим именам. Уберите заголовок секции '
+                'и сохраните заново.')
 
     def _key_check(self) -> None:
         if not st.button('Проверить ключ', type='primary'):

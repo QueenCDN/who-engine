@@ -61,6 +61,27 @@ class StreamlitSecretsSource:
         return str(value)
 
 
+class SectionedSecretsSource:
+    """Запасной путь: значение, записанное внутри секции TOML.
+
+    Streamlit отдаёт такие значения только по пути `секция.ключ` и не
+    пробрасывает их в окружение. Читаем их, чтобы лишний заголовок секции
+    не отправлял приложение в офлайн; интерфейс при этом сообщает, где
+    ключ найден.
+    """
+
+    def get(self, key: str) -> str | None:
+        section = secret_section_holding(key)
+        if section is None:
+            return None
+        try:
+            import streamlit as st
+
+            return str(st.secrets[section][key])
+        except Exception:
+            return None
+
+
 class ChainedSource:
     """Первое непустое значение из цепочки источников."""
 
@@ -97,6 +118,7 @@ def default_source(root: Path = PROJECT_ROOT) -> SettingsSource:
         DotEnvSource(root / '.env'),
         EnvSource(),
         StreamlitSecretsSource(),
+        SectionedSecretsSource(),
     ))
 
 
@@ -111,3 +133,51 @@ def load_settings(source: SettingsSource | None = None,
         database_path=Path(reader.get('WHO_ENGINE_DB')
                            or root / 'data' / 'who_engine.sqlite3'),
     )
+
+
+def secret_names() -> tuple[str, ...]:
+    """Имена секретов верхнего уровня. Значения не читаются и не возвращаются.
+
+    Нужно для диагностики: если ключ записан внутри секции TOML, он окажется
+    вложенным, и здесь будет видно имя секции, а не ожидаемое XAI_API_KEY.
+    """
+    try:
+        import streamlit as st
+
+        return tuple(sorted(str(name) for name in st.secrets.keys()))
+    except Exception:
+        return ()
+
+
+def secret_is_section(name: str) -> bool:
+    """Секрет записан как секция TOML, а не как значение верхнего уровня."""
+    try:
+        import streamlit as st
+
+        from collections.abc import Mapping as _Mapping
+        return isinstance(st.secrets[name], _Mapping)
+    except Exception:
+        return False
+
+
+def env_var_present(key: str) -> bool:
+    """Есть ли переменная окружения. Значение не возвращается."""
+    return bool(os.environ.get(key))
+
+
+def secret_section_holding(key: str) -> str | None:
+    """Имя секции, внутри которой лежит ключ; None — если его там нет.
+
+    Значение не возвращается, только имя секции.
+    """
+    from collections.abc import Mapping as _Mapping
+    try:
+        import streamlit as st
+
+        for name in st.secrets.keys():
+            section = st.secrets[name]
+            if isinstance(section, _Mapping) and section.get(key):
+                return str(name)
+    except Exception:
+        return None
+    return None
